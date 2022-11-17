@@ -3,7 +3,8 @@ name = "layerzero_common"
 version = "0.0.1"
 
 [addresses]
-layerzero_common = "_"
+StarcoinFramework = "0x1"
+layerzero_common = "0x2"
 
 [dependencies]
-AptosFramework = { local = "../deps/aptos-core/aptos-move/framework/aptos-framework" }
+StarcoinFramework = { git = "https://github.com/starcoinorg/starcoin-framework.git", rev = "a98de9eabd82ec3db704af691cee273245a5bf36" }
