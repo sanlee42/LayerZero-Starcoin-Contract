@@ -7,4 +7,4 @@ StarcoinFramework = "0x1"
 layerzero_common = "0x2"
 
 [dependencies]
-StarcoinFramework = { git = "https://github.com/starcoinorg/starcoin-framework.git", rev = "a98de9eabd82ec3db704af691cee273245a5bf36" }
+StarcoinFramework = { git = "https://github.com/starcoinorg/starcoin-framework.git", rev = "12b4301009010f40dc144c045ab873ae2e569ebf" }

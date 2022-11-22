@@ -3,8 +3,8 @@ name = "msglib_v1_1"
 version = "0.0.1"
 
 [addresses]
-msglib_v1_1 = "_"
-
+StarcoinFramework = "0x1"
+msglib_v1_1 = "0x2"
 [dependencies]
 layerzero_common = { local = "../../../layerzero-common" }
 msglib_auth = { local = "../../msglib-auth" }

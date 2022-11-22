@@ -1,6 +1,6 @@
 module executor_v2::executor_v2 {
-    use aptos_framework::coin::Coin;
-    use aptos_framework::aptos_coin::AptosCoin;
+    use StarcoinFramework::Token::Token;
+    use StarcoinFramework::STC::STC;
     use layerzero_common::packet::Packet;
     use executor_auth::executor_cap::ExecutorCapability;
 
@@ -10,9 +10,9 @@ module executor_v2::executor_v2 {
         _executor: address,
         _packet: &Packet,
         _adapter_params: vector<u8>,
-        _fee: Coin<AptosCoin>,
+        _fee: Token<STC>,
         _cap: &ExecutorCapability
-    ): Coin<AptosCoin> {
+    ): Token<STC> {
         abort ELAYERZERO_NOT_SUPPORTED
     }
 

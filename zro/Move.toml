@@ -3,7 +3,8 @@ name = "zro"
 version = "0.0.1"
 
 [addresses]
-zro = "_"
+StarcoinFramework = "0x1"
+zro = "0x2"
 
 [dependencies]
-MoveStdlib = { local = "../deps/aptos-core/aptos-move/framework/move-stdlib" }
+StarcoinFramework = { git = "https://github.com/starcoinorg/starcoin-framework.git", rev = "12b4301009010f40dc144c045ab873ae2e569ebf" }

@@ -1,7 +1,7 @@
 module msglib_v2::msglib_v2_router {
     use layerzero_common::packet::Packet;
-    use aptos_framework::aptos_coin::AptosCoin;
-    use aptos_framework::coin::Coin;
+    use StarcoinFramework::STC::STC;
+    use StarcoinFramework::Token::Token;
     use zro::zro::ZRO;
     use msglib_auth::msglib_cap::MsgLibSendCapability;
 
@@ -9,11 +9,11 @@ module msglib_v2::msglib_v2_router {
 
     public fun send<UA>(
         _packet: &Packet,
-        _native_fee: Coin<AptosCoin>,
-        _zro_fee: Coin<ZRO>,
+        _native_fee: Token<STC>,
+        _zro_fee: Token<ZRO>,
         _msglib_params: vector<u8>,
         _cap: &MsgLibSendCapability
-    ): (Coin<AptosCoin>, Coin<ZRO>) {
+    ): (Token<STC>, Token<ZRO>) {
         abort ELAYERZERO_NOT_SUPPORTED
     }
 

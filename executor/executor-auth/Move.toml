@@ -3,7 +3,8 @@ name = "executor_auth"
 version = "0.0.1"
 
 [addresses]
-executor_auth = "_"
+StarcoinFramework = "0x1"
+executor_auth = "0x2"
 
 [dependencies]
 layerzero_common = { local = "../../layerzero-common" }

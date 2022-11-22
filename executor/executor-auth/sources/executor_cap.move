@@ -1,5 +1,5 @@
 module executor_auth::executor_cap {
-    use std::error;
+    use StarcoinFramework::Errors;
     use layerzero_common::utils::assert_signer;
 
     const EEXECUTOR_AUTH_NOT_AUTORIZED: u64 = 0x00;
@@ -28,7 +28,7 @@ module executor_auth::executor_cap {
     }
 
     public fun assert_version(cap: &ExecutorCapability, version: u64) {
-        assert!(cap.version == version, error::invalid_argument(EEXECUTOR_AUTH_NOT_AUTORIZED));
+        assert!(cap.version == version, Errors::invalid_argument(EEXECUTOR_AUTH_NOT_AUTORIZED));
     }
 
     #[test_only]
