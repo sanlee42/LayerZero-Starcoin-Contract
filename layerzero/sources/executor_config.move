@@ -1,11 +1,10 @@
 module layerzero::executor_config {
-    use aptos_std::table::{Self, Table};
-    use aptos_std::type_info::{TypeInfo, type_of};
+    use StarcoinFramework::Table::{Self, Table};
+    use StarcoinFramework::TypeInfo::{TypeInfo, type_of};
     use layerzero_common::utils::{assert_u16, type_address, assert_type_signer};
-    use std::error;
-    use std::vector;
-    use aptos_std::event::{Self, EventHandle};
-    use aptos_framework::account;
+    use StarcoinFramework::Errors;
+    use StarcoinFramework::Vector;
+    use StarcoinFramework::Event::{Self, EventHandle};
     use layerzero::admin;
 
     friend layerzero::endpoint;
@@ -43,15 +42,15 @@ module layerzero::executor_config {
 
     fun init_module(account: &signer) {
         move_to(account, ExecutorRegistry {
-            executors: vector::empty(),
+            executors: Vector::empty(),
         });
 
         move_to(account, EventStore {
-            register_events: account::new_event_handle<RegisterEvent>(account),
+            register_events: Event::new_event_handle<RegisterEvent>(account),
         });
 
         move_to(account, ConfigStore {
-            config: table::new(),
+            config: Table::new(),
         });
     }
 
@@ -63,17 +62,17 @@ module layerzero::executor_config {
 
         let type_info = type_of<EXECUTOR>();
         assert!(
-            !vector::contains(&registry.executors, &type_info),
-            error::already_exists(ELAYERZERO_EXECUTOR_EXISTED)
+            !Vector::contains(&registry.executors, &type_info),
+            Errors::already_published(ELAYERZERO_EXECUTOR_EXISTED)
         );
         assert!(
-            version == vector::length(&registry.executors) + 1,
-            error::invalid_argument(ELAYERZERO_INVALID_VERSION)
+            version == Vector::length(&registry.executors) + 1,
+            Errors::invalid_argument(ELAYERZERO_INVALID_VERSION)
         );
-        vector::push_back(&mut registry.executors, type_info);
+        Vector::push_back(&mut registry.executors, copy type_info);
 
         let event_store = borrow_global_mut<EventStore>(@layerzero);
-        event::emit_event<RegisterEvent>(
+        Event::emit_event<RegisterEvent>(
             &mut event_store.register_events,
             RegisterEvent {
                 type_info,
@@ -81,15 +80,16 @@ module layerzero::executor_config {
             },
         );
     }
-
-    public entry fun set_default_executor(account: &signer, chain_id: u64, version: u64, executor: address) acquires ConfigStore, ExecutorRegistry {
+    //FIXME: entry fun
+    public fun set_default_executor(account: &signer, chain_id: u64, version: u64, executor: address) acquires ConfigStore, ExecutorRegistry {
         admin::assert_config_admin(account);
         assert_u16(chain_id);
-        assert!(is_valid_version(version), error::invalid_argument(ELAYERZERO_INVALID_VERSION));
-        assert!(executor != @0x00, error::invalid_argument(ELAYERZERO_INVALID_EXECUTOR));
+        assert!(is_valid_version(version), Errors::invalid_argument(ELAYERZERO_INVALID_VERSION));
+        assert!(executor != @0x00, Errors::invalid_argument(ELAYERZERO_INVALID_EXECUTOR));
 
         let store = borrow_global_mut<ConfigStore>(@layerzero);
-        table::upsert(&mut store.config, chain_id, Config { version, executor });
+        //FIXME:upsert
+        Table::add(&mut store.config, chain_id, Config { version, executor });
     }
 
     //
@@ -98,20 +98,21 @@ module layerzero::executor_config {
     public(friend) fun init_executor_config<UA>(account: &signer) {
         assert_type_signer<UA>(account);
         move_to(account, ConfigStore {
-            config: table::new(),
+            config: Table::new(),
         });
     }
 
     public(friend) fun set_executor<UA>(chain_id: u64, version: u64, executor: address) acquires ConfigStore, ExecutorRegistry {
         assert!(
             version == DEFAULT_VERSION || is_valid_version(version),
-            error::invalid_argument(ELAYERZERO_INVALID_VERSION)
+            Errors::invalid_argument(ELAYERZERO_INVALID_VERSION)
         );
         // executor can't be 0x00 if version is not DEFAULT_VERSION
-        assert!(version == DEFAULT_VERSION || executor != @0x00, error::invalid_argument(ELAYERZERO_INVALID_EXECUTOR));
+        assert!(version == DEFAULT_VERSION || executor != @0x00, Errors::invalid_argument(ELAYERZERO_INVALID_EXECUTOR));
 
         let store = borrow_global_mut<ConfigStore>(type_address<UA>());
-        table::upsert(&mut store.config, chain_id, Config { version, executor });
+        //FIXME:upsert
+        Table::add(&mut store.config, chain_id, Config { version, executor });
     }
 
     //
@@ -128,27 +129,27 @@ module layerzero::executor_config {
 
     public fun get_default_executor(chain_id: u64): (u64, address) acquires ConfigStore {
         let store = borrow_global<ConfigStore>(@layerzero);
-        assert!(table::contains(&store.config, chain_id), error::invalid_argument(ELAYERZERO_UNSET_DEFAULT_EXECUTOR));
-        let config = table::borrow(&store.config, chain_id);
+        assert!(Table::contains(&store.config, chain_id), Errors::invalid_argument(ELAYERZERO_UNSET_DEFAULT_EXECUTOR));
+        let config = Table::borrow(&store.config, chain_id);
         (config.version, config.executor)
     }
 
     public fun is_valid_version(version: u64): bool acquires ExecutorRegistry {
         let registry = borrow_global<ExecutorRegistry>(@layerzero);
-        version > 0 && version <= vector::length(&registry.executors)
+        version > 0 && version <= Vector::length(&registry.executors)
     }
 
     public fun get_latest_version(): u64 acquires ExecutorRegistry {
         let registry = borrow_global<ExecutorRegistry>(@layerzero);
-        vector::length(&registry.executors)
+        Vector::length(&registry.executors)
     }
 
     public fun get_executor_typeinfo_by_version(version: u64): TypeInfo acquires ExecutorRegistry {
         // assert it is a valid version
-        assert!(is_valid_version(version), error::invalid_argument(ELAYERZERO_INVALID_VERSION));
+        assert!(is_valid_version(version), Errors::invalid_argument(ELAYERZERO_INVALID_VERSION));
 
         let registry = borrow_global<ExecutorRegistry>(@layerzero);
-        *vector::borrow(&registry.executors, version - 1)
+        *Vector::borrow(&registry.executors, version - 1)
     }
 
     //
@@ -156,8 +157,8 @@ module layerzero::executor_config {
     //
     fun get_executor_internal(ua_address: address, chain_id: u64): (u64, address) acquires ConfigStore {
         let store = borrow_global<ConfigStore>(ua_address);
-        if (table::contains(&store.config, chain_id)) {
-            let config = table::borrow(&store.config, chain_id);
+        if (Table::contains(&store.config, chain_id)) {
+            let config = Table::borrow(&store.config, chain_id);
             (config.version, config.executor)
         } else {
             (DEFAULT_VERSION, @0x00)
@@ -183,10 +184,11 @@ module layerzero::executor_config {
 
     #[test_only]
     fun setup(lz: &signer, ua: &signer) acquires ExecutorRegistry, EventStore {
-        use std::signer;
-        use aptos_framework::aptos_account;
+        use StarcoinFramework::Signer;
+        use StarcoinFramework::STC::STC;
+        use StarcoinFramework::Account;
 
-        aptos_account::create_account(signer::address_of(lz));
+        Account::create_account_with_address<STC>(Signer::address_of(lz));
         admin::init_module_for_test(lz);
         init_module_for_test(lz);
 

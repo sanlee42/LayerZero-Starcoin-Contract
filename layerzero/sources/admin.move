@@ -1,8 +1,8 @@
 // managing layerzero admin priviledges.
 // can transfer the admin account to new multi-sig or resources accounts
 module layerzero::admin {
-    use std::error;
-    use std::signer::address_of;
+    use StarcoinFramework::Errors;
+    use StarcoinFramework::Signer::address_of;
 
     const EADMIN_NOT_AUTHORIZED: u64 = 0x00;
 
@@ -14,12 +14,12 @@ module layerzero::admin {
     fun init_module(account: &signer) {
         move_to(account, Config { admin: @layerzero } )
     }
-
-    public entry fun transfer_admin(account: &signer, new_admin: address) acquires Config {
+    //FIXME: entry fun
+    public fun transfer_admin(account: &signer, new_admin: address) acquires Config {
         let config = borrow_global_mut<Config>(@layerzero);
         assert!(
             address_of(account) == config.admin,
-            error::permission_denied(EADMIN_NOT_AUTHORIZED)
+            Errors::invalid_state(EADMIN_NOT_AUTHORIZED)
         );
 
         config.admin = new_admin;
@@ -33,7 +33,7 @@ module layerzero::admin {
     public fun assert_config_admin(account: &signer) acquires Config {
         assert!(
             is_config_admin(address_of(account)),
-            error::permission_denied(EADMIN_NOT_AUTHORIZED)
+            Errors::invalid_state(EADMIN_NOT_AUTHORIZED)
         );
     }
 

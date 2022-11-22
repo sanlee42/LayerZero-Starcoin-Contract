@@ -1,6 +1,7 @@
 module layerzero::executor_router {
-    use aptos_framework::aptos_coin::AptosCoin;
-    use aptos_framework::coin::Coin;
+    use StarcoinFramework::Token::Token;
+    use StarcoinFramework::STC::STC;
+
     use layerzero::executor_v1;
     use layerzero_common::packet::Packet;
     use executor_v2::executor_v2;
@@ -13,9 +14,9 @@ module layerzero::executor_router {
         executor: address,
         packet: &Packet,
         adapter_params: vector<u8>,
-        fee: Coin<AptosCoin>,
+        fee: Token<STC>,
         cap: &ExecutorCapability,
-    ): Coin<AptosCoin> {
+    ): Token<STC> {
         let version = executor_cap::version(cap);
         if (version == 1) {
             executor_v1::request<UA>(executor, packet, adapter_params, fee, cap)

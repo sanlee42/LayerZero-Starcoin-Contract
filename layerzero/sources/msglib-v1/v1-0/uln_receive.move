@@ -1,12 +1,11 @@
 module layerzero::uln_receive {
     use layerzero_common::packet;
-    use std::error;
+    use StarcoinFramework::Errors;
     use layerzero::endpoint;
-    use aptos_std::table::{Self, Table};
-    use aptos_std::event::{Self, EventHandle};
-    use aptos_framework::account;
+    use StarcoinFramework::Table::{Self, Table};
+    use StarcoinFramework::Event::{Self, EventHandle};
     use layerzero::uln_config::{Self, get_address_size, inbound_confirmations};
-    use std::signer::address_of;
+    use StarcoinFramework::Signer::address_of;
     use layerzero::packet_event;
     use layerzero_common::utils::{assert_length, type_address, assert_signer};
     use msglib_auth::msglib_cap::MsgLibReceiveCapability;
@@ -41,24 +40,24 @@ module layerzero::uln_receive {
         hash: vector<u8>,
         confirmations: u64,
     }
-
+    //FIXME: entry fun
     // layerzero and msglib auth only
-    public entry fun init(account: &signer) {
+    public fun init(account: &signer) {
         assert_signer(account, @layerzero);
 
         // next major version = 1.0
         let cap = endpoint::register_msglib<ULN>(account, true);
         move_to(account, CapStore { cap });
 
-        move_to(account, ProposalStore { proposals: table::new() });
+        move_to(account, ProposalStore { proposals: Table::new() });
 
         move_to(account, EventStore {
-            oracle_events: account::new_event_handle<SignerEvent>(account),
-            relayer_events: account::new_event_handle<SignerEvent>(account)
+            oracle_events: Event::new_event_handle<SignerEvent>(account),
+            relayer_events: Event::new_event_handle<SignerEvent>(account)
         });
     }
-
-    public entry fun relayer_verify<UA>(
+    //FIXME: entry fun
+    public fun relayer_verify<UA>(
         account: &signer,
         packet_bytes: vector<u8>,
         relayer_confirmation: u64
@@ -69,32 +68,32 @@ module layerzero::uln_receive {
 
         assert!(
             relayer_confirmation >= required_confirmation,
-            error::invalid_argument(EULN_INSUFFICIENT_CONFIRMATIONS),
+            Errors::invalid_argument(EULN_INSUFFICIENT_CONFIRMATIONS),
         );
 
         // assert verifier permissions
         let verifier = address_of(account);
         assert!(
             uln_config::relayer(&uln_config) == verifier,
-            error::permission_denied(EULN_INVALID_VERIFIER)
+            Errors::invalid_state(EULN_INVALID_VERIFIER)
         );
 
         // assert the proposal exists from the UA-configured oracle
-        let hash = packet::hash_sha3_packet_bytes(packet_bytes);
+        let hash = packet::hash_sha3_packet_bytes(copy packet_bytes);
         assert_proposal_exists(
             uln_config::oracle(&uln_config),
-            hash,
+            copy hash,
             required_confirmation
         );
         let packet = packet::decode_packet(&packet_bytes, get_address_size(src_chain_id));
 
         // emit verifier event, with confirmation.
         let cap_store = borrow_global<CapStore>(@layerzero);
-        endpoint::receive<UA>(packet, &cap_store.cap);
+        endpoint::receive<UA>(copy packet, &cap_store.cap);
 
         // emit verifer event
         let event_store = borrow_global_mut<EventStore>(@layerzero);
-        event::emit_event<SignerEvent>(
+        Event::emit_event<SignerEvent>(
             &mut event_store.relayer_events,
             SignerEvent {
                 signer: verifier,
@@ -106,8 +105,8 @@ module layerzero::uln_receive {
         // emit inbound event
         packet_event::emit_inbound_event(packet);
     }
-
-    public entry fun oracle_propose(account: &signer, hash: vector<u8>, confirmations: u64) acquires ProposalStore, EventStore {
+    //FIXME: entry fun
+    public fun oracle_propose(account: &signer, hash: vector<u8>, confirmations: u64) acquires ProposalStore, EventStore {
         assert_length(&hash, 32);
 
         let store = borrow_global_mut<ProposalStore>(@layerzero);
@@ -115,21 +114,21 @@ module layerzero::uln_receive {
         let oracle = address_of(account);
         let key = ProposalKey {
             oracle,
-            hash,
+            hash: copy hash,
         };
 
-        if (table::contains(&store.proposals, key)) {
-            let confirmations_ref = table::borrow_mut(&mut store.proposals, key);
+        if (Table::contains(&store.proposals, copy key)) {
+            let confirmations_ref = Table::borrow_mut(&mut store.proposals, copy key);
             // only accept a higher confirmation number
-            assert!(*confirmations_ref < confirmations, error::invalid_argument(EULN_INSUFFICIENT_CONFIRMATIONS));
+            assert!(*confirmations_ref < confirmations, Errors::invalid_argument(EULN_INSUFFICIENT_CONFIRMATIONS));
             *confirmations_ref = confirmations;
         } else {
             // just insert into the table
-            table::add(&mut store.proposals, key, confirmations);
+            Table::add(&mut store.proposals, key, confirmations);
         };
 
         let event_store = borrow_global_mut<EventStore>(@layerzero);
-        event::emit_event<SignerEvent>(
+        Event::emit_event<SignerEvent>(
             &mut event_store.oracle_events,
             SignerEvent {
                 signer: oracle,
@@ -145,8 +144,8 @@ module layerzero::uln_receive {
             oracle,
             hash,
         };
-        if (table::contains(&store.proposals, key)) {
-            return *table::borrow(&store.proposals, key)
+        if (Table::contains(&store.proposals, copy key)) {
+            return *Table::borrow(&store.proposals, key)
         };
         0
     }
@@ -159,14 +158,14 @@ module layerzero::uln_receive {
         };
 
         assert!(
-            table::contains(&store.proposals, key),
-            error::not_found(EULN_PROPOSAL_NOT_FOUND),
+            Table::contains(&store.proposals, copy key),
+            Errors::not_published(EULN_PROPOSAL_NOT_FOUND),
         );
 
-        let oracle_confirmation = table::borrow(&store.proposals, key);
+        let oracle_confirmation = Table::borrow(&store.proposals, key);
         assert!(
             *oracle_confirmation >= required_confirmation,
-            error::invalid_argument(EULN_INSUFFICIENT_CONFIRMATIONS),
+            Errors::invalid_argument(EULN_INSUFFICIENT_CONFIRMATIONS),
         );
     }
 }

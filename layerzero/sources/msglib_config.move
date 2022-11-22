@@ -1,10 +1,9 @@
 module layerzero::msglib_config {
-    use aptos_std::table::{Self, Table};
-    use aptos_std::type_info::{TypeInfo, type_of};
+    use StarcoinFramework::Table::{Self, Table};
+    use StarcoinFramework::TypeInfo::{TypeInfo, type_of};
     use layerzero_common::utils::{assert_u16, type_address, assert_type_signer };
-    use std::error;
-    use aptos_std::event::{Self, EventHandle};
-    use aptos_framework::account;
+    use StarcoinFramework::Errors;
+    use StarcoinFramework::Event::{Self, EventHandle};
     use layerzero_common::semver::{Self, SemVer, build_version };
     use layerzero::admin;
 
@@ -42,18 +41,18 @@ module layerzero::msglib_config {
 
     fun init_module(account: &signer) {
         move_to(account, MsgLibRegistry {
-            type_to_version: table::new(),
-            version_to_type: table::new(),
+            type_to_version: Table::new(),
+            version_to_type: Table::new(),
         });
 
         move_to(account, EventStore {
-            register_events: account::new_event_handle<RegisterEvent>(account),
+            register_events: Event::new_event_handle<RegisterEvent>(account),
         });
 
         // the default configuration
         move_to(account, MsgLibConfig {
-            send_version: table::new(),
-            receive_version: table::new(),
+            send_version: Table::new(),
+            receive_version: Table::new(),
         });
     }
 
@@ -61,16 +60,16 @@ module layerzero::msglib_config {
     // msglib auth only
     //
     public(friend) fun register_msglib<MSGLIB>(version: SemVer) acquires MsgLibRegistry, EventStore {
-        assert!(!is_msglib_registered<MSGLIB>(), error::already_exists(ELAYERZERO_MSGLIB_EXISTED));
-        assert!(!semver::is_blocking_or_default(&version), error::invalid_argument(ELAYERZERO_INVALID_VERSION));
+        assert!(!is_msglib_registered<MSGLIB>(), Errors::already_published(ELAYERZERO_MSGLIB_EXISTED));
+        assert!(!semver::is_blocking_or_default(&version), Errors::invalid_argument(ELAYERZERO_INVALID_VERSION));
 
         let registry = borrow_global_mut<MsgLibRegistry>(@layerzero);
         let type_info = type_of<MSGLIB>();
-        table::add(&mut registry.type_to_version, type_info, version);
-        table::add(&mut registry.version_to_type, version, type_info);
+        Table::add(&mut registry.type_to_version, copy type_info, copy version);
+        Table::add(&mut registry.version_to_type, copy version, copy type_info);
 
         let event_store = borrow_global_mut<EventStore>(@layerzero);
-        event::emit_event<RegisterEvent>(
+        Event::emit_event<RegisterEvent>(
             &mut event_store.register_events,
             RegisterEvent {
                 type_info,
@@ -82,13 +81,15 @@ module layerzero::msglib_config {
     //
     // admin only
     //
-    public entry fun set_default_send_msglib(account: &signer, chain_id: u64, major_version: u64, minor_version: u8) acquires MsgLibConfig, MsgLibRegistry {
+    //FIXME: entry fun
+    public fun set_default_send_msglib(account: &signer, chain_id: u64, major_version: u64, minor_version: u8) acquires MsgLibConfig, MsgLibRegistry {
         admin::assert_config_admin(account);
         let config = borrow_global_mut<MsgLibConfig>(@layerzero);
         set_default_msglib(&mut config.send_version, chain_id, build_version(major_version, minor_version));
     }
 
-    public entry fun set_default_receive_msglib(account: &signer, chain_id: u64, major_version: u64, minor_version: u8) acquires MsgLibConfig, MsgLibRegistry {
+    //FIXME: entry fun
+    public fun set_default_receive_msglib(account: &signer, chain_id: u64, major_version: u64, minor_version: u8) acquires MsgLibConfig, MsgLibRegistry {
         admin::assert_config_admin(account);
         let config = borrow_global_mut<MsgLibConfig>(@layerzero);
         set_default_msglib(&mut config.receive_version, chain_id, build_version(major_version, minor_version));
@@ -96,8 +97,9 @@ module layerzero::msglib_config {
 
     fun set_default_msglib(lib_version: &mut Table<u64, SemVer>, chain_id: u64, version: SemVer) acquires MsgLibRegistry {
         assert_u16(chain_id);
-        assert!(semver::is_blocking(&version) || is_version_registered(version), error::invalid_argument(ELAYERZERO_INVALID_VERSION));
-        table::upsert(lib_version, chain_id, version);
+        assert!(semver::is_blocking(&version) || is_version_registered(copy version), Errors::invalid_argument(ELAYERZERO_INVALID_VERSION));
+        //FIXME: upsert
+        Table::add(lib_version, chain_id, version);
     }
 
     //
@@ -106,8 +108,8 @@ module layerzero::msglib_config {
     public(friend) fun init_msglib_config<UA>(account: &signer) {
         assert_type_signer<UA>(account);
         move_to(account, MsgLibConfig {
-            send_version: table::new(),
-            receive_version: table::new(),
+            send_version: Table::new(),
+            receive_version: Table::new(),
         });
     }
 
@@ -124,10 +126,11 @@ module layerzero::msglib_config {
     fun set_ua_msglib(lib_version: &mut Table<u64, SemVer>, chain_id: u64, version: SemVer) acquires MsgLibRegistry {
         assert_u16(chain_id);
         assert!(
-            semver::is_blocking_or_default(&version) || is_version_registered(version),
-            error::invalid_argument(ELAYERZERO_INVALID_VERSION)
+            semver::is_blocking_or_default(&version) || is_version_registered(copy version),
+            Errors::invalid_argument(ELAYERZERO_INVALID_VERSION)
         );
-        table::upsert(lib_version, chain_id, version);
+        //FIXME: upsert
+        Table::add(lib_version, chain_id, version);
     }
 
     //
@@ -153,38 +156,38 @@ module layerzero::msglib_config {
 
     public fun get_default_send_msglib(chain_id: u64): SemVer acquires MsgLibConfig {
         let config = borrow_global<MsgLibConfig>(@layerzero);
-        assert!(table::contains(&config.send_version, chain_id), error::invalid_argument(ELAYERZERO_UNSET_DEFAULT_MSGLIB));
-        *table::borrow(&config.send_version, chain_id)
+        assert!(Table::contains(&config.send_version, chain_id), Errors::invalid_argument(ELAYERZERO_UNSET_DEFAULT_MSGLIB));
+        *Table::borrow(&config.send_version, chain_id)
     }
 
     public fun get_default_receive_mgslib(chain_id: u64): SemVer acquires MsgLibConfig {
         let config = borrow_global<MsgLibConfig>(@layerzero);
-        assert!(table::contains(&config.receive_version, chain_id), error::invalid_argument(ELAYERZERO_UNSET_DEFAULT_MSGLIB));
-        *table::borrow(&config.receive_version, chain_id)
+        assert!(Table::contains(&config.receive_version, chain_id), Errors::invalid_argument(ELAYERZERO_UNSET_DEFAULT_MSGLIB));
+        *Table::borrow(&config.receive_version, chain_id)
     }
 
     public fun is_msglib_registered<MSGLIB>(): bool acquires MsgLibRegistry {
         let registry = borrow_global<MsgLibRegistry>(@layerzero);
-        table::contains(&registry.type_to_version, type_of<MSGLIB>())
+        Table::contains(&registry.type_to_version, type_of<MSGLIB>())
     }
 
     public fun assert_receive_msglib(ua_address: address, chain_id: u64, version: SemVer) acquires MsgLibConfig {
         let expected_version = get_receive_msglib(ua_address, chain_id);
-        assert!(version == expected_version, error::invalid_argument(ELAYERZERO_INVALID_MSGLIB));
+        assert!(version == expected_version, Errors::invalid_argument(ELAYERZERO_INVALID_MSGLIB));
     }
 
     public fun get_version_by_msglib<MSGLIB>(): SemVer acquires MsgLibRegistry {
-        assert!(is_msglib_registered<MSGLIB>(), error::not_found(ELAYERZERO_MSGLIB_UNREGISTERED));
+        assert!(is_msglib_registered<MSGLIB>(), Errors::not_published(ELAYERZERO_MSGLIB_UNREGISTERED));
 
         let registry = borrow_global<MsgLibRegistry>(@layerzero);
-        *table::borrow(&registry.type_to_version, type_of<MSGLIB>())
+        *Table::borrow(&registry.type_to_version, type_of<MSGLIB>())
     }
 
     public fun get_msglib_by_version(version: SemVer): TypeInfo acquires MsgLibRegistry {
-        assert!(is_version_registered(version), error::not_found(ELAYERZERO_INVALID_VERSION));
+        assert!(is_version_registered(copy version), Errors::not_published(ELAYERZERO_INVALID_VERSION));
 
         let registry = borrow_global<MsgLibRegistry>(@layerzero);
-        *table::borrow(&registry.version_to_type, version)
+        *Table::borrow(&registry.version_to_type, version)
     }
 
     //
@@ -192,13 +195,13 @@ module layerzero::msglib_config {
     //
     public fun is_version_registered(version: SemVer): bool acquires MsgLibRegistry {
         let registry = borrow_global<MsgLibRegistry>(@layerzero);
-        table::contains(&registry.version_to_type, version)
+        Table::contains(&registry.version_to_type, version)
     }
 
     fun get_send_version(ua_address: address, chain_id: u64): SemVer acquires MsgLibConfig {
         let config = borrow_global<MsgLibConfig>(ua_address);
-        if (table::contains(&config.send_version, chain_id)) {
-            *table::borrow(&config.send_version, chain_id)
+        if (Table::contains(&config.send_version, chain_id)) {
+            *Table::borrow(&config.send_version, chain_id)
         } else {
             semver::default_version()
         }
@@ -206,8 +209,8 @@ module layerzero::msglib_config {
 
     fun get_receive_version(ua_address: address, chain_id: u64): SemVer acquires MsgLibConfig {
         let config = borrow_global<MsgLibConfig>(ua_address);
-        if (table::contains(&config.receive_version, chain_id)) {
-            *table::borrow(&config.receive_version, chain_id)
+        if (Table::contains(&config.receive_version, chain_id)) {
+            *Table::borrow(&config.receive_version, chain_id)
         } else {
             semver::default_version()
         }
@@ -230,13 +233,14 @@ module layerzero::msglib_config {
     #[test_only]
     use test::msglib_test::TestUa;
     #[test_only]
-    use std::signer::address_of;
+    use StarcoinFramework::Signer::address_of;
 
     #[test_only]
     fun setup(lz: &signer, _auth: &signer, ua: &signer) acquires MsgLibRegistry, EventStore {
-        use aptos_framework::aptos_account;
+        use StarcoinFramework::Account;
+        use StarcoinFramework::STC::STC;
 
-        aptos_account::create_account(address_of(lz));
+        Account::create_account_with_address<STC>(address_of(lz));
         admin::init_module_for_test(lz);
         init_module_for_test(lz);
 

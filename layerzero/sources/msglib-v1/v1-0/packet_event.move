@@ -1,8 +1,7 @@
 module layerzero::packet_event {
-    use aptos_std::event::EventHandle;
-    use aptos_framework::account;
+    use StarcoinFramework::Event::{Self,EventHandle};
     use layerzero_common::packet::{Packet, encode_packet};
-    use aptos_std::event;
+
 
     friend layerzero::msglib_v1_0;
     friend layerzero::uln_receive;
@@ -22,14 +21,14 @@ module layerzero::packet_event {
 
     fun init_module(account: &signer) {
         move_to(account, EventStore {
-            inbound_events: account::new_event_handle<InboundEvent>(account),
-            outbound_events: account::new_event_handle<OutboundEvent>(account),
+            inbound_events: Event::new_event_handle<InboundEvent>(account),
+            outbound_events: Event::new_event_handle<OutboundEvent>(account),
         });
     }
 
     public(friend) fun emit_inbound_event(packet: Packet) acquires EventStore {
         let event_store = borrow_global_mut<EventStore>(@layerzero);
-        event::emit_event<InboundEvent>(
+        Event::emit_event<InboundEvent>(
             &mut event_store.inbound_events,
             InboundEvent { packet },
         );
@@ -37,7 +36,7 @@ module layerzero::packet_event {
 
     public(friend) fun emit_outbound_event(packet: &Packet) acquires EventStore {
         let event_store = borrow_global_mut<EventStore>(@layerzero);
-        event::emit_event<OutboundEvent>(
+        Event::emit_event<OutboundEvent>(
             &mut event_store.outbound_events,
             OutboundEvent { encoded_packet: encode_packet(packet) },
         );

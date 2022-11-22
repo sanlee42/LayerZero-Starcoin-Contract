@@ -4,10 +4,10 @@
 ///
 /// Remote is saparated from the lzApp because lzApp might have multiple remotes
 module layerzero::remote {
-    use std::error;
-    use aptos_std::table::{Self, Table};
+    use StarcoinFramework::Errors;
+    use StarcoinFramework::Table::{Self, Table};
     use layerzero_common::utils::{type_address, assert_u16};
-    use std::signer::address_of;
+    use StarcoinFramework::Signer::address_of;
     use layerzero::endpoint::UaCapability;
 
     const ELZAPP_REMOTE_ALREADY_INITIALIZED: u64 = 0x00;
@@ -20,15 +20,15 @@ module layerzero::remote {
     }
 
     public fun init(account: &signer) {
-        assert!(!exists<Remotes>(address_of(account)), error::already_exists(ELZAPP_REMOTE_ALREADY_INITIALIZED));
+        assert!(!exists<Remotes>(address_of(account)), Errors::already_published(ELZAPP_REMOTE_ALREADY_INITIALIZED));
 
         move_to(account, Remotes {
-            peers: table::new(),
+            peers: Table::new(),
         });
     }
-
+    //FIXME: entry fun
     /// Set a trusted remote address for a chain by an admin signer.
-    public entry fun set(account: &signer, chain_id: u64, remote_addr: vector<u8>) acquires Remotes {
+    public fun set(account: &signer, chain_id: u64, remote_addr: vector<u8>) acquires Remotes {
         set_internal(address_of(account), chain_id, remote_addr);
     }
 
@@ -39,28 +39,29 @@ module layerzero::remote {
 
     fun set_internal(ua_address: address, chain_id: u64, remote_addr: vector<u8>) acquires Remotes {
         assert_u16(chain_id);
-        assert!(exists<Remotes>(ua_address), error::not_found(ELZAPP_REMOTE_NOT_INITIALIZED));
+        assert!(exists<Remotes>(ua_address), Errors::not_published(ELZAPP_REMOTE_NOT_INITIALIZED));
 
         let remotes = borrow_global_mut<Remotes>(ua_address);
-        table::upsert(&mut remotes.peers, chain_id, remote_addr)
+        //FIXME: upsert
+        Table::add(&mut remotes.peers, chain_id, remote_addr)
     }
 
     public fun get(ua_address: address, chain_id: u64): vector<u8> acquires Remotes {
-        assert!(exists<Remotes>(ua_address), error::not_found(ELZAPP_REMOTE_NOT_INITIALIZED));
+        assert!(exists<Remotes>(ua_address), Errors::not_published(ELZAPP_REMOTE_NOT_INITIALIZED));
 
         let remotes = borrow_global<Remotes>(ua_address);
-        *table::borrow(&remotes.peers, chain_id)
+        *Table::borrow(&remotes.peers, chain_id)
     }
 
     public fun contains(ua_address: address, chain_id: u64): bool acquires Remotes {
-        assert!(exists<Remotes>(ua_address), error::not_found(ELZAPP_REMOTE_NOT_INITIALIZED));
+        assert!(exists<Remotes>(ua_address), Errors::not_published(ELZAPP_REMOTE_NOT_INITIALIZED));
 
         let remotes = borrow_global<Remotes>(ua_address);
-        table::contains(&remotes.peers, chain_id)
+        Table::contains(&remotes.peers, chain_id)
     }
 
     public fun assert_remote(ua_address: address, chain_id: u64, remote_addr: vector<u8>) acquires Remotes {
         let expected = get(ua_address, chain_id);
-        assert!(expected == remote_addr, error::invalid_argument(ELZAPP_INVALID_REMOTE));
+        assert!(expected == remote_addr, Errors::invalid_argument(ELZAPP_INVALID_REMOTE));
     }
 }

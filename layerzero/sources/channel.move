@@ -6,11 +6,10 @@
 //     (3) inbound() receive on endpoint.lz_receive() -> inbound_nonce++
 //          packets are consumed by order
 module layerzero::channel {
-    use aptos_std::table::{Self, Table};
+    use StarcoinFramework::Table::{Self, Table};
     use layerzero_common::utils::{type_address, assert_type_signer};
-    use std::error;
-    use aptos_framework::event::{Self, EventHandle};
-    use aptos_framework::account;
+    use StarcoinFramework::Errors;
+    use StarcoinFramework::Event::{Self, EventHandle};
 
     friend layerzero::endpoint;
 
@@ -50,30 +49,31 @@ module layerzero::channel {
     //
     fun init_module(account: &signer) {
         move_to(account, EventStore {
-            inbound_events: account::new_event_handle<MsgEvent>(account),
-            outbound_events: account::new_event_handle<MsgEvent>(account),
-            receive_events: account::new_event_handle<MsgEvent>(account),
+            inbound_events: Event::new_event_handle<MsgEvent>(account),
+            outbound_events: Event::new_event_handle<MsgEvent>(account),
+            receive_events: Event::new_event_handle<MsgEvent>(account),
         });
     }
 
     public(friend) fun register<UA>(account: &signer) {
         assert_type_signer<UA>(account);
         move_to(account, Channels {
-            states: table::new()
+            states: Table::new()
         });
     }
 
     public(friend) fun receive<UA>(src_chain_id: u64, src_address: vector<u8>, nonce: u64, payload_hash: vector<u8>) acquires Channels, EventStore {
         let ua_address = type_address<UA>();
         let channels = borrow_global_mut<Channels>(ua_address);
-        let channel = get_channel_mut(channels, src_chain_id, src_address);
+        let channel = get_channel_mut(channels, src_chain_id, copy src_address);
 
-        assert!(nonce > channel.inbound_nonce, error::invalid_argument(ELAYERZERO_INVALID_NONCE));
-        table::upsert(&mut channel.payload_hashs, nonce, payload_hash);
+        assert!(nonce > channel.inbound_nonce, Errors::invalid_argument(ELAYERZERO_INVALID_NONCE));
+        //FIXME:upsert
+        Table::add(&mut channel.payload_hashs, nonce, payload_hash);
 
         // emit the publish event
         let event_store = borrow_global_mut<EventStore>(@layerzero);
-        event::emit_event<MsgEvent>(
+        Event::emit_event<MsgEvent>(
             &mut event_store.receive_events,
             MsgEvent {
                 local_address: ua_address,
@@ -88,13 +88,13 @@ module layerzero::channel {
     public(friend) fun outbound<UA>(dst_chain_id: u64, dst_address: vector<u8>): u64 acquires Channels, EventStore {
         let channels = borrow_global_mut<Channels>(type_address<UA>());
 
-        let channel = get_channel_mut(channels, dst_chain_id, dst_address);
+        let channel = get_channel_mut(channels, dst_chain_id, copy dst_address);
 
         // ++outbound
         channel.outbound_nonce = channel.outbound_nonce + 1;
 
         let event_store = borrow_global_mut<EventStore>(@layerzero);
-        event::emit_event<MsgEvent>(
+        Event::emit_event<MsgEvent>(
             &mut event_store.outbound_events,
             MsgEvent {
                 local_address: type_address<UA>(),
@@ -108,16 +108,16 @@ module layerzero::channel {
 
     public(friend) fun inbound<UA>(src_chain_id: u64, src_address: vector<u8>): (u64, vector<u8>) acquires Channels, EventStore {
         let channels = borrow_global_mut<Channels>(type_address<UA>());
-        let channel = get_channel_mut(channels, src_chain_id, src_address);
+        let channel = get_channel_mut(channels, src_chain_id, copy src_address);
 
         channel.inbound_nonce = channel.inbound_nonce + 1;
-        assert!(table::contains(&channel.payload_hashs, channel.inbound_nonce), error::not_found(ELAYERZERO_INVALID_NONCE));
+        assert!(Table::contains(&channel.payload_hashs, channel.inbound_nonce), Errors::not_published(ELAYERZERO_INVALID_NONCE));
 
-        let hash = table::remove(&mut channel.payload_hashs, channel.inbound_nonce);
+        let hash = Table::remove(&mut channel.payload_hashs, channel.inbound_nonce);
 
         // emit the receive event
         let event_store = borrow_global_mut<EventStore>(@layerzero);
-        event::emit_event<MsgEvent>(
+        Event::emit_event<MsgEvent>(
             &mut event_store.inbound_events,
             MsgEvent {
                 local_address: type_address<UA>(),
@@ -136,8 +136,8 @@ module layerzero::channel {
             chain_id: dst_chain_id,
             addr: dst_address,
         };
-        if (table::contains(&channels.states, remote)) {
-            table::borrow(&channels.states, remote).outbound_nonce
+        if (Table::contains(&channels.states, copy remote)) {
+            Table::borrow(&channels.states, remote).outbound_nonce
         } else {
             0
         }
@@ -149,8 +149,8 @@ module layerzero::channel {
             chain_id: src_chain_id,
             addr: src_address,
         };
-        if (table::contains(&channels.states, remote)) {
-            table::borrow(&channels.states, remote).inbound_nonce
+        if (Table::contains(&channels.states, copy remote)) {
+            Table::borrow(&channels.states, remote).inbound_nonce
         } else {
             0
         }
@@ -162,12 +162,12 @@ module layerzero::channel {
             chain_id: src_chain_id,
             addr: src_address,
         };
-        if (!table::contains(&channels.states, remote)) {
+        if (!Table::contains(&channels.states, copy remote)) {
             return false
         };
 
-        let channel = table::borrow(&channels.states, remote);
-        table::contains(&channel.payload_hashs, channel.inbound_nonce + 1)
+        let channel = Table::borrow(&channels.states, remote);
+        Table::contains(&channel.payload_hashs, channel.inbound_nonce + 1)
     }
 
     fun get_channel_mut(channel: &mut Channels, remote_chain_id: u64, remote_address: vector<u8>): &mut Channel {
@@ -176,16 +176,16 @@ module layerzero::channel {
             addr: remote_address,
         };
         // init if necessary
-        if (!table::contains(&channel.states, remote)) {
+        if (!Table::contains(&channel.states, copy remote)) {
             let state = Channel {
                 outbound_nonce: 0,
                 inbound_nonce: 0,
-                payload_hashs: table::new()
+                payload_hashs: Table::new()
             };
-            table::add(&mut channel.states, remote, state);
+            Table::add(&mut channel.states, copy remote, state);
         };
 
-        table::borrow_mut(&mut channel.states, remote)
+        Table::borrow_mut(&mut channel.states, remote)
     }
 
     #[test_only]
@@ -198,10 +198,10 @@ module layerzero::channel {
 
     #[test_only]
     fun setup(lz: &signer) {
-        use std::signer;
-        use aptos_framework::aptos_account;
-
-        aptos_account::create_account(signer::address_of(lz));
+        use StarcoinFramework::Signer;
+        use StarcoinFramework::Account;
+        use StarcoinFramework::STC::STC;
+        Account::create_account_with_address<STC>(Signer::address_of(lz));
         init_module_for_test(lz);
         register<TestUA>(lz);
     }

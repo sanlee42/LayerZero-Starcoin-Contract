@@ -2,8 +2,8 @@
 // need to upgrade this module to support new msglib modules
 // note: V1 only support uln_send
 module layerzero::msglib_router {
-    use aptos_framework::aptos_coin::AptosCoin;
-    use aptos_framework::coin::{Coin};
+    use StarcoinFramework::Token::Token;
+    use StarcoinFramework::STC::STC;
     use layerzero_common::packet::Packet;
     use layerzero::msglib_v1_0;
     use msglib_v2::msglib_v2_router;
@@ -19,11 +19,11 @@ module layerzero::msglib_router {
     //
     public(friend) fun send<UA>(
         packet: &Packet,
-        native_fee: Coin<AptosCoin>,
-        zro_fee: Coin<ZRO>,
+        native_fee: Token<STC>,
+        zro_fee: Token<ZRO>,
         msglib_params: vector<u8>,
         cap: &MsgLibSendCapability
-    ): (Coin<AptosCoin>, Coin<ZRO>) {
+    ): (Token<STC>, Token<ZRO>) {
         let version = msglib_cap::send_version(cap);
         let (major, minor) = semver::values(&version);
 
@@ -62,7 +62,7 @@ module layerzero::msglib_router {
     //
     // public view functions
     //
-    public fun quote(ua_address: address, version: SemVer, dst_chain_id: u64, payload_size: u64, pay_in_zro: bool, msglib_params: vector<u8>): (u64, u64) {
+    public fun quote(ua_address: address, version: SemVer, dst_chain_id: u64, payload_size: u64, pay_in_zro: bool, msglib_params: vector<u8>): (u128, u128) {
         let (major, minor) = semver::values(&version);
         if (major == 1) {
             if (minor == 0) {

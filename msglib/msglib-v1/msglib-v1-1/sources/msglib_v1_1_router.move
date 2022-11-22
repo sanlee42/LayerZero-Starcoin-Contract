@@ -17,7 +17,7 @@ module msglib_v1_1::msglib_v1_1_router {
         abort ELAYERZERO_NOT_SUPPORTED
     }
 
-    public fun quote(_ua_address: address, _dst_chain_id: u64, _payload_size: u64, _pay_in_zro: bool, _msglib_params: vector<u8>): (u64, u64) {
+    public fun quote(_ua_address: address, _dst_chain_id: u64, _payload_size: u64, _pay_in_zro: bool, _msglib_params: vector<u8>): (u128, u128) {
         abort ELAYERZERO_NOT_SUPPORTED
     }
 

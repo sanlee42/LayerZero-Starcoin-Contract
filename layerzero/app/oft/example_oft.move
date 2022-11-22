@@ -1,7 +1,7 @@
 #[test_only]
 module test::example_oft {
-    use std::string;
-    use aptos_framework::coin::{Self, BurnCapability, FreezeCapability, MintCapability};
+    use StarcoinFramework::String;
+    use StarcoinFramework::Token::{Self, BurnCapability, FreezeCapability, MintCapability};
     use layerzero::endpoint::UaCapability;
     use layerzero::oft;
 
@@ -17,8 +17,8 @@ module test::example_oft {
     fun init_module(account: &signer) {
         let (burn_cap, freeze_cap, mint_cap) = coin::initialize<ExampleOFT>(
             account,
-            string::utf8(b"Moon OFT"),
-            string::utf8(b"Moon"),
+            String::utf8(b"Moon OFT"),
+            String::utf8(b"Moon"),
             6,
             true,
         );

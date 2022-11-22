@@ -1,16 +1,15 @@
 // support only type 1 and type 2
 module layerzero::executor_v1 {
-    use std::error;
-    use std::vector;
-    use std::signer::address_of;
+    use StarcoinFramework::Errors;
+    use StarcoinFramework::Vector;
+    use StarcoinFramework::Signer::address_of;
 
-    use aptos_std::table::{Self, Table};
-    use aptos_std::event::{Self, EventHandle};
+    use StarcoinFramework::Table::{Self, Table};
+    use StarcoinFramework::Event::{Self, EventHandle};
 
-    use aptos_framework::coin::{Self, Coin};
-    use aptos_framework::aptos_coin::AptosCoin;
-    use aptos_framework::account;
-    use aptos_framework::aptos_account;
+    use StarcoinFramework::Token::{Self, Token};
+    use StarcoinFramework::STC::STC;
+    use StarcoinFramework::Account;
 
     use layerzero_common::utils::{assert_u16, type_address, vector_slice};
     use layerzero_common::serde;
@@ -67,7 +66,7 @@ module layerzero::executor_v1 {
         src_chain_id: u64,
         guid: vector<u8>,
         receiver: address,
-        amount: u64,
+        amount: u128,
     }
 
     struct JobKey has copy, drop {
@@ -81,16 +80,16 @@ module layerzero::executor_v1 {
 
     fun init_module(account: &signer) {
         move_to(account, AdapterParamsConfig {
-            params: table::new(),
+            params: Table::new(),
         });
 
         move_to(account, EventStore {
-            request_events: account::new_event_handle<RequestEvent>(account),
-            airdrop_events: account::new_event_handle<AirdropEvent>(account),
+            request_events: Event::new_event_handle<RequestEvent>(account),
+            airdrop_events: Event::new_event_handle<AirdropEvent>(account),
         });
 
         move_to(account, JobStore {
-            done: table::new(),
+            done: Table::new(),
         });
     }
 
@@ -101,31 +100,32 @@ module layerzero::executor_v1 {
         executor: address,
         packet: &Packet,
         adapter_params: vector<u8>,
-        fee: Coin<AptosCoin>,
+        fee: Token<STC>,
         cap: &ExecutorCapability
-    ): Coin<AptosCoin> acquires AdapterParamsConfig, ExecutorConfig, EventStore {
+    ): Token<STC> acquires AdapterParamsConfig, ExecutorConfig, EventStore {
         executor_cap::assert_version(cap, 1);
         // check fee
         let ua_address = type_address<UA>();
         let dst_chain_id = packet::dst_chain_id(packet);
 
         // use default one if adapter_params is empty
-        if (vector::length(&adapter_params) == 0) {
+        if (Vector::length(&adapter_params) == 0) {
             adapter_params = get_default_adapter_params(dst_chain_id);
         };
-
-        let fee_expected = quote_fee(ua_address, executor, dst_chain_id, adapter_params);
-        let fee_value = coin::value(&fee);
-        assert!(fee_value >= fee_expected, error::invalid_argument(EEXECUTOR_INSUFFICIENT_FEE));
+        //FIXME: make quote_fee u128
+        let fee_expected = quote_fee(ua_address, executor, dst_chain_id, copy adapter_params);
+        let fee_expected = (fee_expected as u128);
+        let fee_value = Token::value(&fee);
+        assert!(fee_value >= fee_expected, Errors::invalid_argument(EEXECUTOR_INSUFFICIENT_FEE));
 
         // pay fee
-        let refund = coin::extract(&mut fee, fee_value - fee_expected);
-        coin::deposit(executor, fee);
+        let refund = Token::withdraw(&mut fee, fee_value - fee_expected);
+        Account::deposit(executor, fee);
 
         // emit event with GUID
         let event_store = borrow_global_mut<EventStore>(@layerzero);
         let guid = packet::get_guid(packet);
-        event::emit_event<RequestEvent>(
+        Event::emit_event<RequestEvent>(
             &mut event_store.request_events,
             RequestEvent {
                 executor,
@@ -140,42 +140,43 @@ module layerzero::executor_v1 {
     //
     // executor functions
     //
-    public entry fun register(account: &signer) {
-        assert!(!exists<ExecutorConfig>(address_of(account)), error::already_exists(EEXECUTOR_ALEADY_REGISTERED));
+    //FIXME: entry fun
+    public fun register(account: &signer) {
+        assert!(!exists<ExecutorConfig>(address_of(account)), Errors::already_published(EEXECUTOR_ALEADY_REGISTERED));
 
         move_to(account, ExecutorConfig {
-            fee: table::new(),
+            fee: Table::new(),
             acl: acl::empty(),
         });
     }
-
-    public entry fun airdrop(
+    //FIXME: entry fun
+    public fun airdrop(
         account: &signer,
         src_chain_id: u64,
         guid: vector<u8>,
         receiver: address,
-        amount: u64,
+        amount: u128,
     ) acquires EventStore, JobStore {
         assert_u16(src_chain_id);
 
         // check if job is done
         let job_store = borrow_global_mut<JobStore>(@layerzero);
         let job_key = JobKey {
-            guid,
+            guid: copy guid,
             executor: address_of(account),
         };
         assert!(
-            !table::contains(&job_store.done, job_key),
-            error::already_exists(EEXECUTOR_AIRDROP_DONE)
+            !Table::contains(&job_store.done, copy job_key),
+            Errors::already_published(EEXECUTOR_AIRDROP_DONE)
         );
 
         // add it to the job store to prevent double airdrop
-        table::add(&mut job_store.done, job_key, true);
-        aptos_account::transfer(account, receiver, amount);
+        Table::add(&mut job_store.done, job_key, true);
+        Account::pay_from<STC>(account, receiver, amount);
 
         // emit event
         let event_store = borrow_global_mut<EventStore>(@layerzero);
-        event::emit_event<AirdropEvent>(
+        Event::emit_event<AirdropEvent>(
             &mut event_store.airdrop_events,
             AirdropEvent {
                 src_chain_id,
@@ -185,8 +186,8 @@ module layerzero::executor_v1 {
             },
         );
     }
-
-    public entry fun set_fee(
+    //FIXME: entry fun
+    public fun set_fee(
         account: &signer,
         chain_id: u64,
         airdrop_amt_cap: u64,
@@ -199,15 +200,16 @@ module layerzero::executor_v1 {
         assert_executor_registered(account_addr);
 
         let config = borrow_global_mut<ExecutorConfig>(account_addr);
-        table::upsert(&mut config.fee, chain_id, Fee {
+        //FIXME:upsert
+        Table::add(&mut config.fee, chain_id, Fee {
             airdrop_amt_cap,
             price_ratio,
             gas_price,
         });
     }
-
+    //FIXME: entry fun
     /// if not in the allow list, add it. Otherwise, remove it.
-    public entry fun allowlist(account: &signer, ua: address) acquires ExecutorConfig {
+    public fun allowlist(account: &signer, ua: address) acquires ExecutorConfig {
         let account_addr = address_of(account);
         assert_executor_registered(account_addr);
 
@@ -215,8 +217,9 @@ module layerzero::executor_v1 {
         acl::allowlist(&mut config.acl, ua);
     }
 
+    //FIXME: entry fun
     /// if not in the deny list, add it. Otherwise, remove it.
-    public entry fun denylist(account: &signer, ua: address) acquires ExecutorConfig {
+    public fun denylist(account: &signer, ua: address) acquires ExecutorConfig {
         let account_addr = address_of(account);
         assert_executor_registered(account_addr);
 
@@ -227,7 +230,8 @@ module layerzero::executor_v1 {
     //
     // admin functions
     //
-    public entry fun set_default_adapter_params(
+    //FIXME: entry fun
+    public fun set_default_adapter_params(
         account: &signer,
         chain_id: u64,
         adapter_params: vector<u8>,
@@ -236,10 +240,11 @@ module layerzero::executor_v1 {
         assert_u16(chain_id);
 
         let (type, _, _, _) = decode_adapter_params(&adapter_params);
-        assert!(type == 1, error::invalid_argument(EEXECUTOR_INVALID_ADAPTER_PARAMS_TYPE));
+        assert!(type == 1, Errors::invalid_argument(EEXECUTOR_INVALID_ADAPTER_PARAMS_TYPE));
 
         let config = borrow_global_mut<AdapterParamsConfig>(@layerzero);
-        table::upsert(&mut config.params, chain_id, adapter_params);
+        //FIXME: upsert
+        Table::add(&mut config.params, chain_id, adapter_params);
     }
 
     //
@@ -254,17 +259,17 @@ module layerzero::executor_v1 {
         acl::assert_allowed(&config.acl, &ua_address);
 
         // use default one if adapter_params is empty
-        if (vector::length(&adapter_params) == 0) {
+        if (Vector::length(&adapter_params) == 0) {
             adapter_params = get_default_adapter_params(dst_chain_id);
         };
 
         // get fee config from executor
-        assert!(table::contains(&config.fee, dst_chain_id), error::not_found(EEXECUTOR_CONFIG_NOT_FOUND));
-        let fee_config = table::borrow(&config.fee, dst_chain_id);
+        assert!(Table::contains(&config.fee, dst_chain_id), Errors::not_published(EEXECUTOR_CONFIG_NOT_FOUND));
+        let fee_config = Table::borrow(&config.fee, dst_chain_id);
 
         // decode and verify adapter params
         let (_type, extra_gas, airdrop_amount, _receiver) = decode_adapter_params(&adapter_params);
-        assert!(airdrop_amount <= fee_config.airdrop_amt_cap, error::invalid_argument(EEXECUTOR_AIRDROP_TOO_MUCH));
+        assert!(airdrop_amount <= fee_config.airdrop_amt_cap, Errors::invalid_argument(EEXECUTOR_AIRDROP_TOO_MUCH));
 
         (extra_gas * fee_config.gas_price + airdrop_amount) * fee_config.price_ratio / PRICE_RATIO_DENOMINATOR
     }
@@ -278,15 +283,15 @@ module layerzero::executor_v1 {
     public fun get_default_adapter_params(chain_id: u64): vector<u8> acquires AdapterParamsConfig {
         assert_u16(chain_id);
         let config = borrow_global<AdapterParamsConfig>(@layerzero);
-        assert!(table::contains(&config.params, chain_id), error::not_found(EEXECUTOR_DEFAULT_ADAPTER_PARAMS_NOT_FOUND));
-        *table::borrow(&config.params, chain_id)
+        assert!(Table::contains(&config.params, chain_id), Errors::not_published(EEXECUTOR_DEFAULT_ADAPTER_PARAMS_NOT_FOUND));
+        *Table::borrow(&config.params, chain_id)
     }
 
     //
     // internal functions
     //
     fun assert_executor_registered(account: address) {
-        assert!(exists<ExecutorConfig>(account), error::not_found(EEXECUTOR_NOT_REGISTERED));
+        assert!(exists<ExecutorConfig>(account), Errors::not_published(EEXECUTOR_NOT_REGISTERED));
     }
 
     // txType 1
@@ -296,26 +301,26 @@ module layerzero::executor_v1 {
     // bytes  [2       8         8           unfixed       ]
     // fields [txType  extraGas  airdropAmt  airdropAddress]
     fun decode_adapter_params(adapter_params: &vector<u8>): (u64, u64, u64, vector<u8>) {
-        let size = vector::length(adapter_params);
-        assert!(size == 10 || size > 18, error::invalid_argument(EEXECUTOR_INVALID_ADAPTER_PARAMS_SIZE));
+        let size = Vector::length(adapter_params);
+        assert!(size == 10 || size > 18, Errors::invalid_argument(EEXECUTOR_INVALID_ADAPTER_PARAMS_SIZE));
 
         let tx_type = serde::deserialize_u16(&vector_slice(adapter_params, 0, 2));
 
         let extra_gas;
         let airdrop_amount = 0;
-        let receiver = vector::empty<u8>();
+        let receiver = Vector::empty<u8>();
         if (tx_type == 1) {
-            assert!(size == 10, error::invalid_argument(EEXECUTOR_INVALID_ADAPTER_PARAMS_SIZE));
+            assert!(size == 10, Errors::invalid_argument(EEXECUTOR_INVALID_ADAPTER_PARAMS_SIZE));
 
             extra_gas = serde::deserialize_u64(&vector_slice(adapter_params, 2, 10));
         } else if (tx_type == 2) {
-            assert!(size > 18, error::invalid_argument(EEXECUTOR_INVALID_ADAPTER_PARAMS_SIZE));
+            assert!(size > 18, Errors::invalid_argument(EEXECUTOR_INVALID_ADAPTER_PARAMS_SIZE));
 
             extra_gas = serde::deserialize_u64(&vector_slice(adapter_params, 2, 10));
             airdrop_amount = serde::deserialize_u64(&vector_slice(adapter_params, 10, 18));
             receiver = vector_slice(adapter_params, 18, size);
         } else {
-            abort error::invalid_argument(EEXECUTOR_INVALID_ADAPTER_PARAMS_TYPE)
+            abort Errors::invalid_argument(EEXECUTOR_INVALID_ADAPTER_PARAMS_TYPE)
         };
 
         (tx_type, extra_gas, airdrop_amount, receiver)
@@ -328,11 +333,11 @@ module layerzero::executor_v1 {
 
     #[test_only]
     fun setup(lz: &signer, executor: &signer) {
-        use aptos_framework::aptos_account;
+        use StarcoinFramework::Account;
+        use StarcoinFramework::STC::STC;
 
-        aptos_account::create_account(address_of(lz));
-        aptos_account::create_account(address_of(executor));
-
+        Account::create_account_with_address<STC>(address_of(lz));
+        Account::create_account_with_address<STC>(address_of(executor));
         admin::init_module_for_test(lz);
         init_module_for_test(lz);
 
@@ -342,7 +347,7 @@ module layerzero::executor_v1 {
     #[test]
     fun test_decode_adapter_params() {
         // type 1
-        let adapter_params = vector::empty<u8>();
+        let adapter_params = Vector::empty<u8>();
         serde::serialize_u16(&mut adapter_params, 1);
         serde::serialize_u64(&mut adapter_params, 100);
 
@@ -350,14 +355,14 @@ module layerzero::executor_v1 {
         assert!(type == 1, 0);
         assert!(extra_gas == 100, 0);
         assert!(airdrop_amount == 0, 0);
-        assert!(vector::length(&receiver) == 0, 0);
+        assert!(Vector::length(&receiver) == 0, 0);
 
         // type 2
-        let adapter_params = vector::empty<u8>();
+        let adapter_params = Vector::empty<u8>();
         serde::serialize_u16(&mut adapter_params, 2);
         serde::serialize_u64(&mut adapter_params, 100);
         serde::serialize_u64(&mut adapter_params, 5000);
-        vector::append(&mut adapter_params, vector<u8>[1, 2, 3, 4, 5]);
+        Vector::append(&mut adapter_params, vector<u8>[1, 2, 3, 4, 5]);
 
         let (type, extra_gas, airdrop_amount, receiver) = decode_adapter_params(&adapter_params);
         assert!(type == 2, 0);
@@ -373,14 +378,14 @@ module layerzero::executor_v1 {
         set_fee(executor, 1, 1, 2, 3);
 
         let config = borrow_global<ExecutorConfig>(address_of(executor));
-        let fee = table::borrow(&config.fee, 1);
+        let fee = Table::borrow(&config.fee, 1);
         assert!(fee.airdrop_amt_cap == 1, 0);
         assert!(fee.price_ratio == 2, 0);
         assert!(fee.gas_price == 3, 0);
 
         set_fee(executor, 1, 4, 5, 6);
         let config = borrow_global<ExecutorConfig>(address_of(executor));
-        let fee = table::borrow(&config.fee, 1);
+        let fee = Table::borrow(&config.fee, 1);
         assert!(fee.airdrop_amt_cap == 4, 0);
         assert!(fee.price_ratio == 5, 0);
         assert!(fee.gas_price == 6, 0);
@@ -392,11 +397,11 @@ module layerzero::executor_v1 {
 
         set_fee(executor, 1, 100000, PRICE_RATIO_DENOMINATOR / 2, 3);
 
-        let adapter_params = vector::empty<u8>();
+        let adapter_params = Vector::empty<u8>();
         serde::serialize_u16(&mut adapter_params, 2);
         serde::serialize_u64(&mut adapter_params, 100);
         serde::serialize_u64(&mut adapter_params, 5000);
-        vector::append(&mut adapter_params, vector<u8>[1, 2, 3, 4, 5]);
+        Vector::append(&mut adapter_params, vector<u8>[1, 2, 3, 4, 5]);
 
         let fee = quote_fee(@0x1, address_of(executor), 1, adapter_params);
         assert!(fee == (5000 + 100 * 3) / 2, 0);
@@ -442,7 +447,7 @@ module layerzero::executor_v1 {
         setup(&lz, &executor);
 
         // config
-        let default_adapter_params = vector::empty<u8>();
+        let default_adapter_params = Vector::empty<u8>();
         serde::serialize_u16(&mut default_adapter_params, 1);
         serde::serialize_u64(&mut default_adapter_params, 100);
         set_default_adapter_params(&lz, 1, default_adapter_params);

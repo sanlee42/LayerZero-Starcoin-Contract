@@ -3,19 +3,19 @@ module layerzero::endpoint {
     use layerzero_common::utils::{assert_u16, type_address, assert_type_signer, assert_signer};
     use layerzero::channel;
     use layerzero::msglib_router;
-    use std::error;
-    use std::bcs;
-    use aptos_std::table::{Self, Table};
-    use aptos_framework::coin::{Coin};
-    use aptos_framework::aptos_coin::AptosCoin;
+    use StarcoinFramework::Errors;
+    use StarcoinFramework::BCS;
+    use StarcoinFramework::Table::{Self, Table};
+    use StarcoinFramework::STC::STC;
+    use StarcoinFramework::Token::Token;
     use layerzero::msglib_config;
-    use aptos_std::event::{Self, EventHandle};
-    use aptos_std::type_info::{TypeInfo, type_of};
-    use aptos_framework::account::new_event_handle;
+    use StarcoinFramework::Event::{Self, EventHandle};
+    use StarcoinFramework::TypeInfo::{TypeInfo, type_of};
+    use StarcoinFramework::Event::new_event_handle;
     use layerzero::executor_config;
     use layerzero::executor_router;
     use zro::zro::ZRO;
-    use std::hash::{Self, sha3_256};
+    use StarcoinFramework::Hash::{Self, sha3_256};
     use layerzero::bulletin;
     use msglib_auth::msglib_cap::{Self, MsgLibSendCapability, MsgLibReceiveCapability};
     use layerzero_common::semver::{Self, SemVer};
@@ -47,14 +47,15 @@ module layerzero::endpoint {
     //
     // layerzero admin functions
     //
-    public entry fun init(account: &signer, local_chain_id: u64) {
+    //FIXME: entry fun
+    public fun init(account: &signer, local_chain_id: u64) {
         assert_signer(account, @layerzero);
         assert_u16(local_chain_id);
 
         // assert the endpoint has not been initialized
         assert!(
             !exists<ChainConfig>(@layerzero),
-            error::already_exists(ELAYERZERO_STORE_ALREADY_PUBLISHED)
+            Errors::already_published(ELAYERZERO_STORE_ALREADY_PUBLISHED)
         );
 
         move_to(account, ChainConfig {
@@ -63,24 +64,25 @@ module layerzero::endpoint {
 
         move_to(account, UaRegistry {
             register_events: new_event_handle<TypeInfo>(account),
-            ua_infos: table::new(),
+            ua_infos: Table::new(),
         });
 
         move_to(account, Capabilities {
-            send_caps: table::new(),
-            executor_caps: table::new()
+            send_caps: Table::new(),
+            executor_caps: Table::new()
         });
     }
     
     //
     // Executor Auth only
     //
-    public entry fun register_executor<EXECUTOR>(account: &signer) acquires Capabilities {
+    //FIXME: entry fun
+    public fun register_executor<EXECUTOR>(account: &signer) acquires Capabilities {
         let (next_version, cap) = executor_cap::new_version(account); //authenticated in function
         executor_config::register_executor<EXECUTOR>(next_version);
 
         let caps = borrow_global_mut<Capabilities>(@layerzero);
-        table::add(&mut caps.executor_caps, next_version, cap);
+        Table::add(&mut caps.executor_caps, next_version, cap);
     }
 
     //
@@ -88,10 +90,10 @@ module layerzero::endpoint {
     //
     public fun register_msglib<MSGLIB>(account: &signer, major: bool): MsgLibReceiveCapability acquires Capabilities {
         let (next_version, send_cap, receive_cap) = msglib_cap::new_version<MSGLIB>(account, major);
-        msglib_config::register_msglib<MSGLIB>(next_version);
+        msglib_config::register_msglib<MSGLIB>(copy next_version);
 
         let caps = borrow_global_mut<Capabilities>(@layerzero);
-        table::add(&mut caps.send_caps, next_version, send_cap);
+        Table::add(&mut caps.send_caps, copy next_version, send_cap);
 
         // also register the bulletins
         bulletin::init_msglib_bulletin(next_version);
@@ -129,14 +131,14 @@ module layerzero::endpoint {
         let regsitry = borrow_global_mut<UaRegistry>(@layerzero);
         let type_address = type_address<UA>();
         assert!(
-            !table::contains(&regsitry.ua_infos, type_address),
-            error::already_exists(ELAYERZERO_UA_ALREADY_REGISTERED)
+            !Table::contains(&regsitry.ua_infos, type_address),
+            Errors::already_published(ELAYERZERO_UA_ALREADY_REGISTERED)
         );
 
         let type_info = type_of<UA>();
-        table::add(&mut regsitry.ua_infos, type_address, type_info);
+        Table::add(&mut regsitry.ua_infos, type_address, copy type_info);
 
-        event::emit_event<TypeInfo>(
+        Event::emit_event<TypeInfo>(
             &mut regsitry.register_events,
             type_info,
         );
@@ -154,7 +156,7 @@ module layerzero::endpoint {
         assert_u16(chain_id);
         let version = semver::build_version(major_version, minor_version);
         let cap_store = borrow_global<Capabilities>(@layerzero);
-        let cap = table::borrow(&cap_store.send_caps, version);
+        let cap = Table::borrow(&cap_store.send_caps, version);
         msglib_router::set_config<UA>(chain_id, config_type, config_bytes, cap);
     }
 
@@ -196,19 +198,19 @@ module layerzero::endpoint {
         dst_chain_id: u64,
         dst_address: vector<u8>,
         payload: vector<u8>,
-        native_fee: Coin<AptosCoin>,
-        zro_fee: Coin<ZRO>,
+        native_fee: Token<STC>,
+        zro_fee: Token<ZRO>,
         adapter_params: vector<u8>,
         msglib_params: vector<u8>,
         _cap: &UaCapability<UA>
-    ): (u64, Coin<AptosCoin>, Coin<ZRO>) acquires ChainConfig, Capabilities {
+    ): (u64, Token<STC>, Token<ZRO>) acquires ChainConfig, Capabilities {
         assert_u16(dst_chain_id);
 
-        let nonce = channel::outbound<UA>(dst_chain_id, dst_address);
+        let nonce = channel::outbound<UA>(dst_chain_id, copy dst_address);
 
         let packet = packet::new_packet(
             get_local_chain_id(),
-            bcs::to_bytes(&type_address<UA>()),
+            BCS::to_bytes(&type_address<UA>()),
             dst_chain_id,
             dst_address,
             nonce,
@@ -218,7 +220,7 @@ module layerzero::endpoint {
         // handle msglib
         let send_version = msglib_config::get_send_msglib(type_address<UA>(), dst_chain_id);
         let cap_store = borrow_global<Capabilities>(@layerzero);
-        let send_cap = table::borrow(&cap_store.send_caps, send_version);
+        let send_cap = Table::borrow(&cap_store.send_caps, send_version);
         let (refund_native, refund_zro) = msglib_router::send<UA>(&packet, native_fee, zro_fee, msglib_params, send_cap);
 
         // handle executor
@@ -230,11 +232,11 @@ module layerzero::endpoint {
     fun handle_executor<UA>(
         packet: &Packet,
         adapter_params: vector<u8>,
-        fee: Coin<AptosCoin>
-    ): Coin<AptosCoin> acquires Capabilities {
+        fee: Token<STC>
+    ): Token<STC> acquires Capabilities {
         let (version, executor) = get_executor(type_address<UA>(), packet::dst_chain_id((packet)));
         let caps = borrow_global<Capabilities>(@layerzero);
-        let cap = table::borrow(&caps.executor_caps, version);
+        let cap = Table::borrow(&caps.executor_caps, version);
         executor_router::request<UA>(
             executor,
             packet,
@@ -253,14 +255,14 @@ module layerzero::endpoint {
     ): u64 {
         assert_u16(src_chain_id);
         let (nonce, payload_hash) = channel::inbound<UA>(src_chain_id, src_address);
-        assert!(payload_hash == sha3_256(payload), error::invalid_argument(ELAYERZERO_INVALID_PAYLOAD));
+        assert!(payload_hash == sha3_256(payload), Errors::invalid_argument(ELAYERZERO_INVALID_PAYLOAD));
         nonce
     }
 
     // only receive packets from the UA-configured MSGLIB
     public fun receive<UA>(packet: Packet, cap: &MsgLibReceiveCapability) acquires ChainConfig, UaRegistry {
         // assert UA type
-        assert!(is_ua_registered<UA>(), error::not_found(ELAYERZERO_UA_NOT_REGISTERED));
+        assert!(is_ua_registered<UA>(), Errors::not_published(ELAYERZERO_UA_NOT_REGISTERED));
 
         // assert src chain id
         let src_chain_id = packet::src_chain_id(&packet);
@@ -273,14 +275,14 @@ module layerzero::endpoint {
 
         // assert the packet is targetting at the UA
         assert!(
-            packet::dst_address(&packet) == bcs::to_bytes(&ua_address),
-            error::invalid_argument(ELAYERZERO_INVALID_DST_ADDRESS),
+            packet::dst_address(&packet) == BCS::to_bytes(&ua_address),
+            Errors::invalid_argument(ELAYERZERO_INVALID_DST_ADDRESS),
         );
 
         // assert the packet is targetting at this chain
         assert!(
             packet::dst_chain_id(&packet) == get_local_chain_id(),
-            error::invalid_argument(ELAYERZERO_INVALID_CHAIN_ID)
+            Errors::invalid_argument(ELAYERZERO_INVALID_CHAIN_ID)
         );
 
         // nonce will be checked in the channel module
@@ -288,7 +290,7 @@ module layerzero::endpoint {
             src_chain_id,
             packet::src_address(&packet),
             packet::nonce(&packet),
-            hash::sha3_256(packet::payload(&packet)),
+            Hash::sha3_256(packet::payload(&packet)),
         );
     }
 
@@ -298,19 +300,19 @@ module layerzero::endpoint {
     public fun is_ua_registered<UA>(): bool acquires UaRegistry {
         let ua_address = type_address<UA>();
         let registry = borrow_global<UaRegistry>(@layerzero);
-        if (!table::contains(&registry.ua_infos, ua_address)) {
+        if (!Table::contains(&registry.ua_infos, ua_address)) {
             return false
         };
 
-        let ua_info = table::borrow(&registry.ua_infos, ua_address);
+        let ua_info = Table::borrow(&registry.ua_infos, ua_address);
         return type_of<UA>() == *ua_info
     }
 
     public fun get_next_guid(ua_address: address, dst_chain_id: u64, dst_address: vector<u8>): vector<u8> acquires ChainConfig {
         let chain_id = get_local_chain_id();
-        let next_nonce = channel::outbound_nonce(ua_address, dst_chain_id, dst_address) + 1;
+        let next_nonce = channel::outbound_nonce(ua_address, dst_chain_id, copy dst_address) + 1;
 
-        packet::compute_guid(next_nonce, chain_id, bcs::to_bytes(&ua_address), dst_chain_id, dst_address)
+        packet::compute_guid(next_nonce, chain_id, BCS::to_bytes(&ua_address), dst_chain_id, dst_address)
     }
 
     public fun quote_fee(ua_address: address, dst_chain_id: u64, payload_size: u64, pay_in_zro: bool, adapter_params: vector<u8>, msglib_params: vector<u8>): (u64, u64) {
@@ -318,9 +320,9 @@ module layerzero::endpoint {
         let (native_fee, zro_fee)  = msglib_router::quote(ua_address, msglib_version, dst_chain_id, payload_size, pay_in_zro, msglib_params);
 
         let (executor_version, executor) = executor_config::get_executor(ua_address, dst_chain_id);
-        let executor_fee=  executor_router::quote(ua_address, executor_version, executor, dst_chain_id, adapter_params);
-
-        (native_fee + executor_fee, zro_fee)
+        let executor_fee=  executor_router::quote(ua_address, executor_version, executor, dst_chain_id, adapter_params) ;
+        //FIXME: as u128
+        ((native_fee as u64)+ executor_fee, (zro_fee as u64))
     }
 
     public fun has_next_receive(ua_address: address, src_chain_id: u64, src_address: vector<u8>): bool {
@@ -351,7 +353,7 @@ module layerzero::endpoint {
 
     public fun get_ua_type_by_address(addr: address): TypeInfo acquires UaRegistry {
         let regsitry = borrow_global<UaRegistry>(@layerzero);
-        *table::borrow(&regsitry.ua_infos, addr)
+        *Table::borrow(&regsitry.ua_infos, addr)
     }
 
     public fun get_local_chain_id(): u64 acquires ChainConfig {
@@ -402,9 +404,9 @@ module layerzero::endpoint {
 
     #[test(lz = @layerzero)]
     fun test_register_ua(lz: &signer) acquires UaRegistry {
-        use aptos_framework::aptos_account;
-
-        aptos_account::create_account(@layerzero);
+        use StarcoinFramework::Account;
+        use StarcoinFramework::STC::STC;
+        Account::create_account_with_address<STC>(@layerzero);
 
         init(lz, 77);
 
@@ -416,9 +418,9 @@ module layerzero::endpoint {
     #[test(lz = @layerzero)]
     #[expected_failure(abort_code = 0x80003)]
     fun test_register_two_ua_in_same_address(lz: &signer) acquires UaRegistry {
-        use aptos_framework::aptos_account;
-
-        aptos_account::create_account(@layerzero);
+        use StarcoinFramework::Account;
+        use StarcoinFramework::STC::STC;
+        Account::create_account_with_address<STC>(@layerzero);
 
         init(lz, 77);
 

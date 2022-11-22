@@ -1,3 +1,3 @@
 module zro::zro {
-    struct ZRO {}
+    struct ZRO has copy, drop, store {}
 }

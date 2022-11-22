@@ -1,11 +1,10 @@
 module layerzero::uln_config {
-    use aptos_std::table::{Self, Table, borrow_mut_with_default, borrow};
+    use StarcoinFramework::Table::{Self, Table, borrow_mut_with_default, borrow};
     use layerzero_common::utils::{type_address, assert_u16 };
-    use aptos_std::from_bcs::to_address;
+    use StarcoinFramework::BCS::{Self, to_address};
     use layerzero_common::serde;
-    use std::error;
-    use std::vector;
-    use std::bcs;
+    use StarcoinFramework::Errors;
+    use StarcoinFramework::Vector;
     use layerzero::admin;
 
     friend layerzero::msglib_v1_0;
@@ -55,31 +54,31 @@ module layerzero::uln_config {
     //
     fun init_module(account: &signer) {
         move_to(account, DefaultUlnConfig {
-            config: table::new(),
+            config: Table::new(),
         });
 
         move_to(account, UaUlnConfig {
-            config: table::new(),
+            config: Table::new(),
         });
 
         move_to(account, ChainConfig {
-            chain_address_size: table::new(),
+            chain_address_size: Table::new(),
         });
     }
-
-    public entry fun set_chain_address_size(account: &signer, chain_id: u64, size: u64) acquires ChainConfig {
+    // FIXME: entry fun
+    public fun set_chain_address_size(account: &signer, chain_id: u64, size: u64) acquires ChainConfig {
         admin::assert_config_admin(account);
         assert_u16(chain_id);
 
         let chain_config_store = borrow_global_mut<ChainConfig>(@layerzero);
         assert!(
-            !table::contains(&chain_config_store.chain_address_size, chain_id),
-            error::invalid_argument(EULN_IMMUTABLE_ADDRESS_SIZE)
+            !Table::contains(&chain_config_store.chain_address_size, chain_id),
+            Errors::invalid_argument(EULN_IMMUTABLE_ADDRESS_SIZE)
         );
-        table::add(&mut chain_config_store.chain_address_size, chain_id, size);
+        Table::add(&mut chain_config_store.chain_address_size, chain_id, size);
     }
-
-    public entry fun set_default_config(
+    // FIXME: entry fun
+    public fun set_default_config(
         account: &signer,
         chain_id: u64,
         oracle: address,
@@ -92,10 +91,11 @@ module layerzero::uln_config {
 
         // the global config can not set to default config
         let uln_config = new_uln_config(oracle, relayer, inbound_confirmations, outbound_confirmations);
-        assert!(is_valid_default_uln_config(&uln_config), error::invalid_argument(EULN_INVALID_CONFIG));
+        assert!(is_valid_default_uln_config(&uln_config), Errors::invalid_argument(EULN_INVALID_CONFIG));
 
         let default_config = borrow_global_mut<DefaultUlnConfig>(@layerzero);
-        table::upsert(&mut default_config.config, chain_id, uln_config);
+        //FIXME: upsert
+        Table::add(&mut default_config.config, chain_id, uln_config);
     }
 
     public(friend) fun set_ua_config<UA>(
@@ -122,7 +122,7 @@ module layerzero::uln_config {
         } else if (config_type == CONFIG_TYPE_OUTBOUND_CONFIRMATIONS) {
             config.outbound_confirmations = serde::deserialize_u64(&config_bytes);
         } else {
-            abort error::invalid_argument(EULN_INVALID_CONFIG_TYPE)
+            abort Errors::invalid_argument(EULN_INVALID_CONFIG_TYPE)
         }
     }
 
@@ -141,42 +141,42 @@ module layerzero::uln_config {
             chain_id,
         };
 
-        assert!(table::contains(&config_store.config, key), error::not_found(EULN_CONFIG_NOT_FOUND));
+        assert!(Table::contains(&config_store.config, copy key), Errors::not_published(EULN_CONFIG_NOT_FOUND));
         let config = borrow(&config_store.config, key);
 
         if (config_type == CONFIG_TYPE_RELAYER) {
-            bcs::to_bytes(&config.relayer)
+            BCS::to_bytes(&config.relayer)
         } else if (config_type == CONFIG_TYPE_ORACLE) {
-            bcs::to_bytes(&config.oracle)
+            BCS::to_bytes(&config.oracle)
         } else if (config_type == CONFIG_TYPE_INBOUND_CONFIRMATIONS) {
-            let confirmations_bytes = vector::empty<u8>();
+            let confirmations_bytes = Vector::empty<u8>();
             serde::serialize_u64(&mut confirmations_bytes, config.inbound_confirmations);
             confirmations_bytes
         } else if (config_type == CONFIG_TYPE_OUTBOUND_CONFIRMATIONS) {
-            let confirmations_bytes = vector::empty<u8>();
+            let confirmations_bytes = Vector::empty<u8>();
             serde::serialize_u64(&mut confirmations_bytes, config.outbound_confirmations);
             confirmations_bytes
         } else {
-            abort error::invalid_argument(EULN_INVALID_CONFIG_TYPE)
+            abort Errors::invalid_argument(EULN_INVALID_CONFIG_TYPE)
         }
     }
 
     public fun assert_address_size(chain_id: u64, address_size: u64) acquires ChainConfig {
         let chain_address_size = get_address_size(chain_id);
-        assert!(address_size == chain_address_size, error::invalid_argument(EULN_INVALID_ADDRESS_SIZE));
+        assert!(address_size == chain_address_size, Errors::invalid_argument(EULN_INVALID_ADDRESS_SIZE));
     }
 
     public fun get_address_size(chain_id: u64): u64 acquires ChainConfig {
         let chain_config = borrow_global<ChainConfig>(@layerzero);
-        assert!(table::contains(&chain_config.chain_address_size, chain_id), error::invalid_argument(EULN_INVALID_CHAIN_ID));
+        assert!(Table::contains(&chain_config.chain_address_size, chain_id), Errors::invalid_argument(EULN_INVALID_CHAIN_ID));
 
         *borrow(&chain_config.chain_address_size, chain_id)
     }
 
     public fun get_uln_config(ua_address: address, chain_id: u64): UlnConfig acquires DefaultUlnConfig, UaUlnConfig {
         let default_config_store = borrow_global<DefaultUlnConfig>(@layerzero);
-        assert!(table::contains(&default_config_store.config, chain_id), error::invalid_argument(EULN_INVALID_CHAIN_ID));
-        let default_config = table::borrow(&default_config_store.config, chain_id);
+        assert!(Table::contains(&default_config_store.config, chain_id), Errors::invalid_argument(EULN_INVALID_CHAIN_ID));
+        let default_config = Table::borrow(&default_config_store.config, chain_id);
 
         let ua_config_store = borrow_global<UaUlnConfig>(@layerzero);
         let key = UaConfigKey {
@@ -184,9 +184,9 @@ module layerzero::uln_config {
             chain_id,
         };
 
-        if (table::contains(&ua_config_store.config, key)) {
+        if (Table::contains(&ua_config_store.config, copy key)) {
             // ua has initialize the configuration
-            let ua_config = table::borrow(&ua_config_store.config, key);
+            let ua_config = Table::borrow(&ua_config_store.config, key);
             merge(ua_config, default_config)
         } else {
             // return the default configuration if otherwise
@@ -266,9 +266,9 @@ module layerzero::uln_config {
 
     #[test_only]
     fun setup(lz: &signer) {
-        use aptos_framework::aptos_account;
-
-        aptos_account::create_account(@layerzero);
+        use StarcoinFramework::Account;
+        use StarcoinFramework::STC::STC;
+        Account::create_account_with_address<STC>(@layerzero);
         admin::init_module_for_test(lz);
         init_module(lz);
     }
@@ -284,7 +284,7 @@ module layerzero::uln_config {
         assert_address_size(chain_id, 20);
 
         let store = borrow_global<ChainConfig>(@layerzero);
-        let chain_address_size = table::borrow(&store.chain_address_size, chain_id);
+        let chain_address_size = Table::borrow(&store.chain_address_size, chain_id);
         assert!(*chain_address_size == 20, 0);
     }
 
@@ -298,8 +298,8 @@ module layerzero::uln_config {
 
     #[test(lz = @layerzero)]
     fun test_set_ua_uln_config(lz: signer)  acquires DefaultUlnConfig, UaUlnConfig {
-        use std::vector;
-        use std::bcs;
+        use StarcoinFramework::Vector;
+        use StarcoinFramework::BCS;
 
         setup(&lz);
 
@@ -321,12 +321,12 @@ module layerzero::uln_config {
 
         // set ua the config
         let new_outbound_confirmations = 20;
-        let confirmations_bytes = vector::empty();
+        let confirmations_bytes = Vector::empty();
         serde::serialize_u64(&mut confirmations_bytes, new_outbound_confirmations);
         set_ua_config<ExampleUa>(chain_id, CONFIG_TYPE_OUTBOUND_CONFIRMATIONS, confirmations_bytes);
 
         let new_relayer = @0x4;
-        set_ua_config<ExampleUa>(chain_id, CONFIG_TYPE_RELAYER, bcs::to_bytes(&new_relayer));
+        set_ua_config<ExampleUa>(chain_id, CONFIG_TYPE_RELAYER, BCS::to_bytes(&new_relayer));
 
         // assert config
         let uln_config = get_uln_config(type_address<ExampleUa>(), chain_id);

@@ -7,7 +7,7 @@ module layerzero::test_helpers {
     use layerzero::channel;
     use layerzero::msglib_config;
     use layerzero_common::packet::{Self, Packet};
-    use std::signer::address_of;
+    use StarcoinFramework::signer::address_of;
     use layerzero::endpoint;
     use layerzero::executor_config;
     use layerzero::executor_v1::{Self, Executor};
